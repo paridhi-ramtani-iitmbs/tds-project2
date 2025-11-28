@@ -1,12 +1,12 @@
+# Use Python 3.10
 FROM python:3.10-slim-bookworm
 
-# Install system dependencies for Playwright (as root)
+# 1. Install system dependencies for Playwright (Requires Root)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
-    libatspi2.0-0 \
     libcairo2 \
     libcurl4 \
     libdbus-1-3 \
@@ -27,25 +27,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies and Playwright
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Create a user with UID 1000 (standard for Hugging Face Spaces)
-# This prevents permission errors often seen with Playwright
+# 2. Set up a new user 'user' (Required for Hugging Face Spaces)
 RUN useradd -m -u 1000 user
+
+# 3. Switch to the new user
 USER user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH
 
-# Update working directory permissions
-WORKDIR /app
-COPY --chown=user . $HOME/app
+# 4. Set working directory to the user's home folder
+WORKDIR $HOME/app
 
-# Set a default PORT to 7860 if the environment doesn't provide one
+# 5. Copy requirements.txt FIRST (Optimizes cache)
+COPY --chown=user requirements.txt .
+
+# 6. Install Python dependencies
+# Note: We install playwright here via pip, then install the browser
+RUN pip install --no-cache-dir -U pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# 7. Install Playwright Browser (Chromium) as the user
+RUN playwright install chromium
+
+# 8. Copy the rest of the application code
+COPY --chown=user . .
+
+# 9. Set the Default Port (Fixes the "'' is not a valid port" error)
 ENV PORT=7860
 
-# Expose the port
-EXPOSE $PORT
-
-# Start the app with Gunicorn, using the PORT environment variable
-CMD gunicorn -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:$PORTorker app:app --bind 0.0.0.0:$PORT
+# 10. Start the application
+CMD gunicorn -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:$PORT
