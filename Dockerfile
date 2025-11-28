@@ -28,21 +28,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies and Playwright
-RUN pip install --no-cache-dir -U pip && \
-    pip install --no-cache-dir playwright && \
-    playwright install chromium
-
-# Set working directory
-WORKDIR /app
-
-# Copy your code
-COPY . .
-
-# Install your app's Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose the port (Render sets $PORT)
-EXPOSE 8000
+# Create a user with UID 1000 (standard for Hugging Face Spaces)
+# This prevents permission errors often seen with Playwright
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH
 
-# Start the app with Gunicorn (binds to $PORT)
-CMD gunicorn -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:$PORT
+# Update working directory permissions
+WORKDIR /app
+COPY --chown=user . $HOME/app
+
+# Set a default PORT to 7860 if the environment doesn't provide one
+ENV PORT=7860
+
+# Expose the port
+EXPOSE $PORT
+
+# Start the app with Gunicorn, using the PORT environment variable
+CMD gunicorn -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:$PORTorker app:app --bind 0.0.0.0:$PORT
